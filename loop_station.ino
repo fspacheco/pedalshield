@@ -16,14 +16,14 @@
 
 int in_ADC0, in_ADC1;  //variables for 2 ADCs values (ADC0, ADC1) //*********************TO DO: conferir resolução (12 bits? 16?)
 int POT0, POT1, POT2, out_DAC0, out_DAC1; //variables for 3 pots (ADC8, ADC9, ADC10)
-const uint8_t LED = 3;
+const uint8_t LED = 13;
 const uint8_t FOOTSWITCH = 7;
 const uint8_t TOGGLE = 2;
 const char FILENAME[] = "teste.txt";
 
 uint8_t foot_state;
 
-const int chipSelect = 10;
+const int chipSelect = 10; //for SD card
 File myFile;
 
 //state machine
@@ -40,7 +40,7 @@ void setup()
   while (!Serial) {
     ; // wait for serial port to connect. Needed for native USB port only
   }
-  Serial.print("Initializing SD card...");
+  Serial.println("Initializing SD card...");
 
   if (!SD.begin(chipSelect)) {
     Serial.println("ERROR: SD initialization failed! ##########");
@@ -67,7 +67,7 @@ void setup()
   Serial.print(" FOOTSWITCH: ");
   Serial.print(FOOTSWITCH);
   Serial.print(" TOGGLE: ");
-  Serial.println(TOGGLE); 
+  Serial.println(TOGGLE);
 }
 
 void loop()
@@ -91,6 +91,11 @@ void loop()
   dacc_write_conversion_data(DACC_INTERFACE, out_DAC1);//write on DAC
 
   foot_state = digitalRead(FOOTSWITCH);
+
+  Serial.print("ST:");
+  Serial.print(curr_state);
+  Serial.print("  FOOT:");
+  Serial.println(foot_state);
 
   current_time = millis();
   //Turn on the LED if the effect is ON and write in SD card or Play
@@ -122,10 +127,16 @@ void loop()
       if (SD.exists(FILENAME)) {
         // delete the file:
         Serial.print("Removing ");
-        Serial.print(FILENAME);
+        Serial.println(FILENAME);
         SD.remove(FILENAME);
-        Serial.print("OK. Removed.");
+        Serial.println("OK. Removed.");
       }
+      else {
+        Serial.print("WARNING: ");
+        Serial.print(FILENAME);
+        Serial.println(" NOT found while trying to delete it.");
+      }
+      curr_state = IDLE;
       break;
 
     case CHECK_CARD:
@@ -138,17 +149,22 @@ void loop()
       break;
 
     case READ_CARD:
-      myFile = SD.open(FILENAME);
-      // read from the file until there's nothing else in it:
-      while (myFile.available()) {
-        out_DAC0 = Serial.write(myFile.read());
-        out_DAC0 = map(in_ADC0, 0, 4095, 1, POT2);
-        dacc_set_channel_selection(DACC_INTERFACE, 0);       //select DAC channel 0
-        dacc_write_conversion_data(DACC_INTERFACE, out_DAC0);//write on DAC
-        //TO DO: Check this. No DAC1?***********
+      myFile = SD.open(FILENAME, FILE_READ);
+      if (!myFile) {
+        Serial.println("ERROR: file could not be opened while trying to READ");
       }
-      // close the file:
-      myFile.close();
+      else {
+        // read from the file until there's nothing else in it:
+        while (myFile.available()) {
+          out_DAC0 = Serial.write(myFile.read());
+          out_DAC0 = map(in_ADC0, 0, 4095, 1, POT2);
+          dacc_set_channel_selection(DACC_INTERFACE, 0);       //select DAC channel 0
+          dacc_write_conversion_data(DACC_INTERFACE, out_DAC0);//write on DAC
+          //TO DO: Check this. No DAC1?***********
+        }
+        // close the file:
+        myFile.close();
+      }
       curr_state = IDLE;
       break;
 
@@ -167,15 +183,15 @@ void loop()
         Serial.println(FILENAME);
       }
       else {
-        Serial.print("ERROR: trying to open for writing ");
+        Serial.print("ERROR: while trying to open for WRITing ");
         Serial.println(FILENAME);
-        } 
-        curr_state=IDLE;       
-        break;
-
-      default:
-        curr_state = IDLE;//just in case there is some problem
-        Serial.println("ERROR: Reached default state in switch ###########################");
-        break;
       }
+      curr_state = IDLE;
+      break;
+
+    default:
+      curr_state = IDLE;//just in case there is some problem
+      Serial.println("ERROR: Reached default state in switch ###########################");
+      break;
+  }
 }
